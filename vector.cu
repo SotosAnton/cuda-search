@@ -5,7 +5,7 @@
 
 #define DIM 3
 #define GRID 16
-#define VALIDATE 1
+#define VALIDATE 1000
 
 
 __global__
@@ -253,6 +253,10 @@ void search(float*q,  float *c,int*grid,int*points_per_block ,  int*closests,flo
   float point[3];
 
  for(int i=0;i<N;i++){
+    /*if(i % 100 == 0){
+  float per = (float) i / (float) N * 100;
+     printf("%f\n",per  );
+   } */
      point[0]=q[i*DIM+0];
      point[1]=q[i*DIM+1];
      point[2]=q[i*DIM+2];
@@ -428,8 +432,8 @@ int main(int argc,char **argv)
 
 
 
-  int blocks=1024;
-  int threads_pblock=32;
+  int blocks=1280;
+  int threads_pblock=64;
   int threads=blocks*threads_pblock;
 
   int k = N / threads ;
@@ -564,7 +568,7 @@ printf("Search Time GPU: %f\n", elapsed_time);
 gettimeofday (&startwtime, NULL);
 
 
-search(q,c,grid_c,points_block_c ,closest,mindists  ,N, D);
+//search(q,c,grid_c,points_block_c ,closest,mindists  ,N, D);
 
 gettimeofday (&endwtime, NULL);
 
