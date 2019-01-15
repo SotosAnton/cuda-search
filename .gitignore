@@ -1,3 +1,7 @@
 **.o
 **.out
 vec
+*.m
+*.data
+output_data/
+*.pdf

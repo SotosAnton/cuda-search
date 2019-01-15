@@ -5,7 +5,15 @@
 
 #define DIM 3
 #define GRID 16
-#define VALIDATE 1000
+#define VALIDATE 10
+
+// function declarations
+void validate_grid (const float *c, const float *intervals, const int *grid_c,
+                    const int *points_block_c, int D);
+
+void validate_search (const float *q, const float *c, const int *closest, int N,
+                      int D);
+void write_file (double time_var, const char *filename, const char *mode);
 
 __global__ void
 find_grid_loc_gpu (float *points, int *grid_loc, int n, int d, int k)
@@ -439,6 +447,9 @@ main (int argc, char **argv)
   int N = NQ;
   int D = 1 << atoi (argv[2]);
 
+  write_file (atoi (argv[1]), "problem_size.data", "a");
+  write_file (atoi (argv[2]), "grid_size.data", "a");
+
   int block_num = D * D * D;
   printf ("NQ=%d NC=%d D=%d block_num=%d\n", NQ, NC, D, block_num);
 
@@ -541,9 +552,61 @@ main (int argc, char **argv)
                            + endwtime.tv_sec - startwtime.tv_sec);
 
   printf ("Time : %f\n", elapsed_time);
+  write_file (elapsed_time, "rearrange_time.data", "a");
 
   //-----------------------------------GRID VALIDATION IN
   // CPU-----------------------
+  validate_grid (c, intervals, grid_c, points_block_c, D);
+  //-----------------------------------SEARCH GRID IN
+  // GPU-----------------------
+
+  gettimeofday (&startwtime, NULL);
+
+  search_gpu<<<blocks, threads_pblock>>> (d_q, d_c, block_loc, points_per_block,
+                                          d_closests, d_mindists, N, D, D * D);
+  cudaDeviceSynchronize ();
+
+  cudaMemcpy (closest, d_closests, N * sizeof (int), cudaMemcpyDeviceToHost);
+  cudaMemcpy (mindists, d_mindists, N * sizeof (int), cudaMemcpyDeviceToHost);
+
+  gettimeofday (&endwtime, NULL);
+
+  elapsed_time = (double) ((endwtime.tv_usec - startwtime.tv_usec) / 1.0e6
+                           + endwtime.tv_sec - startwtime.tv_sec);
+
+  validate_search (q, c, closest, N, D);
+  printf ("Search Time GPU: %f\n", elapsed_time);
+  write_file (elapsed_time, "search_gpu_time.data", "a");
+
+  //-----------------------------------SEARCH GRID IN CPU-----------------------
+
+  gettimeofday (&startwtime, NULL);
+
+  // search(q,c,grid_c,points_block_c ,closest,mindists  ,N, D);
+
+  gettimeofday (&endwtime, NULL);
+
+  elapsed_time = (double) ((endwtime.tv_usec - startwtime.tv_usec) / 1.0e6
+                           + endwtime.tv_sec - startwtime.tv_sec);
+  printf ("Search Time CPU : %f\n", elapsed_time);
+  write_file (elapsed_time, "search_cpu_time.data", "a");
+
+  //-----------------------------------VALIDATE SEARCH IN
+  // CPU-----------------------
+
+  //---------------CLEAN UP-------------------------------------
+
+  cudaFree (d_q_block);
+  cudaFree (d_c_block);
+
+  cudaFree (d_q);
+  cudaFree (d_c);
+}
+void
+validate_grid (const float *c, const float *intervals, const int *grid_c,
+               const int *points_block_c, int D)
+{
+
   int sum = 0;
   int fails = 0;
   float xmax, ymax, zmax, xmin, ymin, zmin;
@@ -612,43 +675,16 @@ main (int argc, char **argv)
     }
 
   printf ("GRID VALIDATION POINTS:%d FAILS:%d\n", sum, fails);
-  //-----------------------------------SEARCH GRID IN GPU-----------------------
+}
 
-  gettimeofday (&startwtime, NULL);
-
-  search_gpu<<<blocks, threads_pblock>>> (d_q, d_c, block_loc, points_per_block,
-                                          d_closests, d_mindists, N, D, D * D);
-  cudaDeviceSynchronize ();
-
-  cudaMemcpy (closest, d_closests, N * sizeof (int), cudaMemcpyDeviceToHost);
-  cudaMemcpy (mindists, d_mindists, N * sizeof (int), cudaMemcpyDeviceToHost);
-
-  gettimeofday (&endwtime, NULL);
-
-  elapsed_time = (double) ((endwtime.tv_usec - startwtime.tv_usec) / 1.0e6
-                           + endwtime.tv_sec - startwtime.tv_sec);
-
-  printf ("Search Time GPU: %f\n", elapsed_time);
-
-  //-----------------------------------SEARCH GRID IN CPU-----------------------
-
-  gettimeofday (&startwtime, NULL);
-
-  // search(q,c,grid_c,points_block_c ,closest,mindists  ,N, D);
-
-  gettimeofday (&endwtime, NULL);
-
-  elapsed_time = (double) ((endwtime.tv_usec - startwtime.tv_usec) / 1.0e6
-                           + endwtime.tv_sec - startwtime.tv_sec);
-  printf ("Search Time CPU : %f\n", elapsed_time);
-
-  //-----------------------------------VALIDATE SEARCH IN
-  // CPU-----------------------
-
+void
+validate_search (const float *q, const float *c, const int *closest, int N,
+                 int D)
+{
   float mindist, dist;
   int close;
 
-  fails = 0;
+  int fails = 0;
 
   for (int i = 0; i < VALIDATE; i++)
     {
@@ -670,33 +706,46 @@ main (int argc, char **argv)
         }
       if (close != closest[i])
         {
-          printf ("intex %d %d dists %f %f  q :%f %f %f c: %f %f %f\n", close,
-                  closest[i], mindist, mindists[i], q[i * DIM + 0],
-                  q[i * DIM + 1], q[i * DIM + 2], c[close * DIM + 0],
-                  c[close * DIM + 1], c[close * DIM + 2]);
+          // printf ("intex %d %d dists %f %f  q :%f %f %f c: %f %f %f\n",
+          // close,
+          //  closest[i], mindist, mindists[i], q[i * DIM + 0],
+          //  q[i * DIM + 1], q[i * DIM + 2], c[close * DIM + 0],
+          //  c[close * DIM + 1], c[close * DIM + 2]);
           int x, y, z;
           x = (int) (q[i * DIM + 0] * D);
           y = (int) (q[i * DIM + 1] * D);
           z = (int) (q[i * DIM + 2] * D);
 
-          printf ("q : %d %d %d ", x, y, z);
+          // printf ("q : %d %d %d ", x, y, z);
           x = (int) (c[close * DIM + 0] * D);
           y = (int) (c[close * DIM + 1] * D);
           z = (int) (c[close * DIM + 2] * D);
 
-          printf ("c: %d %d %d \n", x, y, z);
+          // printf ("c: %d %d %d \n", x, y, z);
 
           fails++;
         }
     }
   float failrate = fails / (float) 1024 * 100;
-  printf ("%d\n", fails);
+  printf ("SEARCH VALIDATION POINTS: %d FAILS: %d\n", VALIDATE, fails);
+}
 
-  //---------------CLEAN UP-------------------------------------
-
-  cudaFree (d_q_block);
-  cudaFree (d_c_block);
-
-  cudaFree (d_q);
-  cudaFree (d_c);
+void
+write_file (double time_var, const char *filename, const char *mode)
+{
+  FILE *fptr;
+  // open the file
+  char filepath[64] = "output_data/";
+  strcat (filepath, filename);
+  fptr = fopen (filepath, mode);
+  if (!fptr)
+    {
+      printf ("Error: Can't open file %s", filepath);
+      return;
+    }
+  // print the time in file
+  fprintf (fptr, "%lf ", time_var);
+  // close file
+  fclose (fptr);
+  return;
 }
