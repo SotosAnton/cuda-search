@@ -1,28 +1,13 @@
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
-#include <math.h>
+#include <time.h>
 
 #define DIM 3
 #define GRID 16
 #define VALIDATE 10
 
-// function declarations
-void validate_grid (const float *c, const float *intervals, const int *grid_c,
-                    const int *points_block_c, int D);
-
-void validate_search (const float *q, const float *c, const int *closest, int N,
-                      int D);
-void write_file (double time_var, const char *filename, const char *mode);
-
-/**
- * Find grid location of each block with gpu
- * @method find_grid_loc_gpu
- * @param  points            points matrix
- * @param  grid_loc          grid location for each point result
- * @param  n                 num of elements
- * @param  d                 grid dimension (cube)
- */
 __global__ void
 find_grid_loc_gpu (float *points, int *grid_loc, int n, int d, int k)
 {
@@ -42,16 +27,6 @@ find_grid_loc_gpu (float *points, int *grid_loc, int n, int d, int k)
     }
 }
 
-/**
- * [search_block_gpu description]
- * @method search_block_gpu
- * @param  closest          current closest point index
- * @param  current_min      current closest point distance
- * @param  block_offset     block location in point array
- * @param  q                point
- * @param  block            block point array
- * @param  points_in_block  num of points the current block
- */
 __device__ void
 search_block_gpu (int *closest, float *current_min, int block_offset, float *q,
                   float *block, int points_in_block)
@@ -64,7 +39,6 @@ search_block_gpu (int *closest, float *current_min, int block_offset, float *q,
       dist = (block[i * DIM + 0] - q[0]) * (block[i * DIM + 0] - q[0]);
       dist += (block[i * DIM + 1] - q[1]) * (block[i * DIM + 1] - q[1]);
       dist += (block[i * DIM + 2] - q[2]) * (block[i * DIM + 2] - q[2]);
-
       dist = sqrtf (dist);
       if (dist < *current_min)
         {
@@ -73,18 +47,7 @@ search_block_gpu (int *closest, float *current_min, int block_offset, float *q,
         }
     }
 }
-/**
- * find closet point in c of each point in q with gpu
- * @method void search_gpu
- * @param  q                [q points]
- * @param  c                [c points]
- * @param  grid             [c points location of each grid block]
- * @param  points_per_block [points in each grid block]
- * @param  closests         [result array index]
- * @param  mindists         [result array min dist found]
- * @param  N                [number of elements]
- * @param  d                [grid dimension cube]
- */
+
 __global__ void
 search_gpu (float *q, float *c, int *grid, int *points_per_block, int *closests,
             float *mindists, int n, int d, int dd)
@@ -195,14 +158,7 @@ search_gpu (float *q, float *c, int *grid, int *points_per_block, int *closests,
         }
     }
 }
-/**
- * Find grid location of each block
- * @method voidfind_grid_loc
- * @param  points            points matrix
- * @param  grid_loc          grid location for each point result
- * @param  n                 num of elements
- * @param  d                 grid dimension (cube)
- */
+
 void
 find_grid_loc (float *points, int *grid_loc, int n, int d)
 {
@@ -221,20 +177,11 @@ void
 init_rand_points (float *p, int n)
 {
   int i;
+  srand (time (NULL));
   for (i = 0; i < n * DIM; i++)
     p[i] = (rand () % 1000000 / (float) (1000001));
 }
 
-/**
- * [search_block description]
- * @method search_block
- * @param  closest          current closest point index
- * @param  current_min      current closest point distance
- * @param  block_offset     block location in point array
- * @param  q                point
- * @param  block            block point array
- * @param  points_in_block  num of points the current block
- */
 void
 search_block (int *closest, float *current_min, int block_offset, float *q,
               float *block, int points_in_block)
@@ -255,18 +202,7 @@ search_block (int *closest, float *current_min, int block_offset, float *q,
         }
     }
 }
-/**
- * find closet point in c of each point in q with cpu
- * @method voidsearch
- * @param  q                [q points]
- * @param  c                [c points]
- * @param  grid             [c points location of each grid block]
- * @param  points_per_block [points in each grid block]
- * @param  closests         [result array index]
- * @param  mindists         [result array min dist found]
- * @param  N                [number of elements]
- * @param  d                [grid dimension cube]
- */
+
 void
 search (float *q, float *c, int *grid, int *points_per_block, int *closests,
         float *mindists, int N, int d)
@@ -296,7 +232,6 @@ search (float *q, float *c, int *grid, int *points_per_block, int *closests,
       grid_loc = x + d * y + d * d * z;
 
       mindists[i] = (1 << 10); // Inf
-
       search_block (&closests[i], &mindists[i], grid[grid_loc], point,
                     &c[grid[grid_loc] * DIM], points_per_block[grid_loc]);
 
@@ -349,10 +284,8 @@ search (float *q, float *c, int *grid, int *points_per_block, int *closests,
             }
 
           stage++;
-
-          //  if (stage == 1)
-          //    finished = 0;
-
+          if (stage == 1)
+            finished = 0;
           if (!finished)
             {
 
@@ -441,9 +374,6 @@ main (int argc, char **argv)
   int N = NQ;
   int D = 1 << atoi (argv[2]);
 
-  write_file (atoi (argv[1]), "problem_size.data", "a");
-  write_file (atoi (argv[2]), "grid_size.data", "a");
-
   int block_num = D * D * D;
   printf ("NQ=%d NC=%d D=%d block_num=%d\n", NQ, NC, D, block_num);
 
@@ -505,7 +435,8 @@ main (int argc, char **argv)
   cudaMalloc (&d_closests, N * sizeof (float));
   cudaMalloc (&d_mindists, N * sizeof (float));
 
-  //-------------ASSING POINTS TO GRID IN GPU-----------------------
+  //-----------------------------------ASSING POINTS TO GRID IN GPU
+  //-----------------------
 
   cudaMemcpy (d_q, q, N * DIM * sizeof (float), cudaMemcpyHostToDevice);
   cudaMemcpy (d_c, c, N * DIM * sizeof (float), cudaMemcpyHostToDevice);
@@ -526,7 +457,8 @@ main (int argc, char **argv)
                            + endwtime.tv_sec - startwtime.tv_sec);
   printf ("Time : %f\n", elapsed_time);
 
-  //-------------REARRANGE POINTS IN GRID IN CPU-----------------------
+  //-----------------------------------REARRANGE POINTS IN GRID IN
+  // CPU-----------------------
   gettimeofday (&startwtime, NULL);
 
   // q=rearrange(q,q_block,points_block_q,grid_q,N,block_num);
@@ -544,59 +476,9 @@ main (int argc, char **argv)
                            + endwtime.tv_sec - startwtime.tv_sec);
 
   printf ("Time : %f\n", elapsed_time);
-  write_file (elapsed_time, "rearrange_time.data", "a");
 
-  //---------------GRID VALIDATION IN  // CPU-----------------------
-  validate_grid (c, intervals, grid_c, points_block_c, D);
-  //-------------SEARCH GRID IN GPU-----------------------
-
-  gettimeofday (&startwtime, NULL);
-
-  search_gpu<<<blocks, threads_pblock>>> (d_q, d_c, block_loc, points_per_block,
-                                          d_closests, d_mindists, N, D, D * D);
-  cudaDeviceSynchronize ();
-
-  cudaMemcpy (closest, d_closests, N * sizeof (int), cudaMemcpyDeviceToHost);
-  cudaMemcpy (mindists, d_mindists, N * sizeof (int), cudaMemcpyDeviceToHost);
-
-  gettimeofday (&endwtime, NULL);
-
-  elapsed_time = (double) ((endwtime.tv_usec - startwtime.tv_usec) / 1.0e6
-                           + endwtime.tv_sec - startwtime.tv_sec);
-
-  validate_search (q, c, closest, N, D);
-  printf ("Search Time GPU: %f\n", elapsed_time);
-  write_file (elapsed_time, "search_gpu_time.data", "a");
-
-  //---------------SEARCH GRID IN CPU-----------------------
-
-  gettimeofday (&startwtime, NULL);
-
-  // search(q,c,grid_c,points_block_c ,closest,mindists  ,N, D);
-
-  gettimeofday (&endwtime, NULL);
-
-  elapsed_time = (double) ((endwtime.tv_usec - startwtime.tv_usec) / 1.0e6
-                           + endwtime.tv_sec - startwtime.tv_sec);
-  printf ("Search Time CPU : %f\n", elapsed_time);
-  write_file (elapsed_time, "search_cpu_time.data", "a");
-
-  //-----------------------------------VALIDATE SEARCH IN
+  //-----------------------------------GRID VALIDATION IN
   // CPU-----------------------
-
-  //---------------CLEAN UP-------------------------------------
-
-  cudaFree (d_q_block);
-  cudaFree (d_c_block);
-
-  cudaFree (d_q);
-  cudaFree (d_c);
-}
-void
-validate_grid (const float *c, const float *intervals, const int *grid_c,
-               const int *points_block_c, int D)
-{
-
   int sum = 0;
   int fails = 0;
   float xmax, ymax, zmax, xmin, ymin, zmin;
@@ -665,16 +547,30 @@ validate_grid (const float *c, const float *intervals, const int *grid_c,
     }
 
   printf ("GRID VALIDATION POINTS:%d FAILS:%d\n", sum, fails);
-}
+  //-------------------SEARCH GRID IN GPU-----------------------
 
-void
-validate_search (const float *q, const float *c, const int *closest, int N,
-                 int D)
-{
+  gettimeofday (&startwtime, NULL);
+
+  search_gpu<<<blocks, threads_pblock>>> (d_q, d_c, block_loc, points_per_block,
+                                          d_closests, d_mindists, N, D, D * D);
+  cudaDeviceSynchronize ();
+
+  cudaMemcpy (closest, d_closests, N * sizeof (int), cudaMemcpyDeviceToHost);
+  cudaMemcpy (mindists, d_mindists, N * sizeof (int), cudaMemcpyDeviceToHost);
+
+  gettimeofday (&endwtime, NULL);
+
+  elapsed_time = (double) ((endwtime.tv_usec - startwtime.tv_usec) / 1.0e6
+                           + endwtime.tv_sec - startwtime.tv_sec);
+
+  printf ("Search Time GPU: %f\n", elapsed_time);
+
+  //--------------VALIDATE SEARCH IN CPU-----------------------
+
   float mindist, dist;
   int close;
 
-  int fails = 0;
+  fails = 0;
 
   for (int i = 0; i < VALIDATE; i++)
     {
@@ -696,46 +592,42 @@ validate_search (const float *q, const float *c, const int *closest, int N,
         }
       if (close != closest[i])
         {
-          // printf ("intex %d %d dists %f %f  q :%f %f %f c: %f %f %f\n",
-          // close,
-          //  closest[i], mindist, mindists[i], q[i * DIM + 0],
-          //  q[i * DIM + 1], q[i * DIM + 2], c[close * DIM + 0],
-          //  c[close * DIM + 1], c[close * DIM + 2]);
+          printf ("index %d %d dists %f %f  q :%f %f %f c: %f %f %f\n", close,
+                  closest[i], mindist, mindists[i], q[i * DIM + 0],
+                  q[i * DIM + 1], q[i * DIM + 2], c[close * DIM + 0],
+                  c[close * DIM + 1], c[close * DIM + 2]);
           int x, y, z;
           x = (int) (q[i * DIM + 0] * D);
           y = (int) (q[i * DIM + 1] * D);
           z = (int) (q[i * DIM + 2] * D);
 
-          // printf ("q : %d %d %d ", x, y, z);
+          printf ("q : %d %d %d ", x, y, z);
           x = (int) (c[close * DIM + 0] * D);
           y = (int) (c[close * DIM + 1] * D);
           z = (int) (c[close * DIM + 2] * D);
 
-          // printf ("c: %d %d %d \n", x, y, z);
+          printf ("c: %d %d %d \n", x, y, z);
 
           fails++;
         }
     }
   float failrate = fails / (float) 1024 * 100;
-  printf ("SEARCH VALIDATION POINTS: %d FAILS: %d\n", VALIDATE, fails);
-}
+  printf ("SEARCH FAILS : %d  out of %d: %f % \n", fails, VALIDATE, failrate);
 
-void
-write_file (double time_var, const char *filename, const char *mode)
-{
-  FILE *fptr;
-  // open the file
-  char filepath[64] = "output_data/";
-  strcat (filepath, filename);
-  fptr = fopen (filepath, mode);
-  if (!fptr)
-    {
-      printf ("Error: Can't open file %s", filepath);
-      return;
-    }
-  // print the time in file
-  fprintf (fptr, "%lf ", time_var);
-  // close file
-  fclose (fptr);
-  return;
+  //---------------CLEAN UP-------------------------------------
+
+  cudaFree (d_q_block);
+  cudaFree (d_c_block);
+
+  cudaFree (d_q);
+  cudaFree (d_c);
+
+  cudaMalloc (&d_q, N * DIM * sizeof (float));
+  cudaMalloc (&d_c, N * DIM * sizeof (float));
+
+  cudaMalloc (&points_per_block, block_num * sizeof (float));
+  cudaMalloc (&block_loc, block_num * sizeof (float));
+
+  cudaMalloc (&d_closests, N * sizeof (float));
+  cudaMalloc (&d_mindists, N * sizeof (float));
 }
