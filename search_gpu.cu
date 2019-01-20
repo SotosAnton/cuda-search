@@ -5,7 +5,7 @@
 
 #define DIM 3
 #define GRID 16
-#define VALIDATE 0
+#define VALIDATE 10
 
 // function declarations
 void validate_grid (const float *c, const float *intervals, const int *grid_c,
@@ -264,7 +264,8 @@ rearrange (float *p, int *intex, int *points_per_block, int *grid, int n, int k)
       iDim = iDim + DIM;
       positions[intex[i]]++;
     }
-  // free(p);
+  free (p);
+  free (positions);
   return arrangedpoints;
 }
 
@@ -280,10 +281,10 @@ main (int argc, char **argv)
   int NC = 1 << atoi (argv[1]);
   int N = NQ;
   int D = 1 << atoi (argv[2]);
-
-  write_file (atoi (argv[1]), "problem_size.data", "a");
-  write_file (atoi (argv[2]), "grid_size.data", "a");
-
+  /*
+    write_file (atoi (argv[1]), "problem_size.data", "a");
+    write_file (atoi (argv[2]), "grid_size.data", "a");
+  */
   int block_num = D * D * D;
   printf ("NQ=%d NC=%d D=%d block_num=%d\n", NQ, NC, D, block_num);
 
@@ -319,9 +320,6 @@ main (int argc, char **argv)
   init_rand_points (q, N);
   init_rand_points (c, N);
 
-  // find_grid_loc(q,q_block,N,D);
-  // find_grid_loc(c,c_block,N,D);
-
   int blocks = 1280;
   int threads_pblock = 64;
   int threads = blocks * threads_pblock;
@@ -352,7 +350,7 @@ main (int argc, char **argv)
 
   gettimeofday (&startwtime, NULL);
 
-  find_grid_loc_gpu<<<blocks, threads_pblock>>> (d_q, d_q_block, N, D, k);
+  // find_grid_loc_gpu<<<blocks, threads_pblock>>> (d_q, d_q_block, N, D, k);
   find_grid_loc_gpu<<<blocks, threads_pblock>>> (d_c, d_c_block, N, D, k);
 
   cudaDeviceSynchronize ();
@@ -360,7 +358,6 @@ main (int argc, char **argv)
   cudaMemcpy (q_block, d_q_block, N * sizeof (int), cudaMemcpyDeviceToHost);
   cudaMemcpy (c_block, d_c_block, N * sizeof (int), cudaMemcpyDeviceToHost);
 
-  // q=rearrange(q,q_block,points_block_q,grid_q,N,block_num);
   c = rearrange (c, c_block, points_block_c, grid_c, N, block_num);
 
   cudaMemcpy (d_c, c, N * DIM * sizeof (float), cudaMemcpyHostToDevice);
@@ -375,7 +372,7 @@ main (int argc, char **argv)
                            + endwtime.tv_sec - startwtime.tv_sec);
 
   printf ("Rearrange Time : %f\n", elapsed_time);
-  write_file (elapsed_time, "rearrange_time.data", "a");
+  // write_file (elapsed_time, "rearrange_time.data", "a");
 
   //---------------GRID VALIDATION IN  // CPU-----------------------
   validate_grid (c, intervals, grid_c, points_block_c, D);
@@ -395,7 +392,7 @@ main (int argc, char **argv)
   elapsed_time = (double) ((endwtime.tv_usec - startwtime.tv_usec) / 1.0e6
                            + endwtime.tv_sec - startwtime.tv_sec);
 
-  write_file (elapsed_time, "search_gpu_time.data", "a");
+  // write_file (elapsed_time, "search_gpu_time.data", "a");
   validate_search (q, c, closest, N, D);
   printf ("Search Time GPU: %f\n", elapsed_time);
 
@@ -406,6 +403,17 @@ main (int argc, char **argv)
 
   cudaFree (d_q);
   cudaFree (d_c);
+
+  free (q);
+  free (c);
+  free (grid_c);
+  free (grid_q);
+  free (c_block);
+  free (q_block);
+  free (points_block_c);
+  free (points_block_q);
+  free (closest);
+  free (mindists);
 }
 void
 validate_grid (const float *c, const float *intervals, const int *grid_c,
